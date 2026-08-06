@@ -1,0 +1,8 @@
+#include "resource.h"
+
+IDI_APP_ICON   ICON "app_icon.ico"
+
+IDR_FFMPEG_EXE RCDATA "../bin/ffmpeg.exe"
+IDR_HTML       RCDATA "../ui/index.html"
+IDR_CSS        RCDATA "../ui/style.css"
+IDR_JS         RCDATA "../ui/main.js"

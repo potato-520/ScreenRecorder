@@ -1,0 +1,26 @@
+# Build and binary outputs
+build/
+bin/
+
+# Temporary recording test files and logs
+*.mp4
+*.wav
+*.txt
+
+# Visual Studio / MSVC intermediate folders and configuration files
+.vs/
+out/
+*.user
+*.suo
+*.db
+*.opendb
+*.sdf
+*.vcxproj.user
+
+# Operating system files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+release.ps1
+ScreenRecorder.exe

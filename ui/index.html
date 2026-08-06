@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智眸录屏</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <div id="content-measure-wrapper">
+            <!-- Custom Titlebar -->
+            <div class="window-titlebar" id="window-titlebar">
+                <div class="titlebar-drag-area" id="titlebar-drag-area">
+                    <span class="titlebar-icon">
+                        <svg viewBox="0 0 100 100" width="14" height="14" style="vertical-align: middle;">
+                            <circle cx="50" cy="50" r="42" stroke="#00f0f0" stroke-width="8" fill="none" opacity="0.9"/>
+                            <circle cx="50" cy="50" r="18" fill="#00f0f0"/>
+                        </svg>
+                    </span>
+                    <span class="titlebar-title" id="titlebar-text">智眸录屏 - 资源加载中...</span>
+                </div>
+                <div class="titlebar-controls">
+                    <button class="titlebar-btn" id="win-min-btn" title="最小化">—</button>
+                    <button class="titlebar-btn btn-close" id="win-close-btn" title="关闭">✕</button>
+                </div>
+            </div>
+
+            <!-- Top Title Bar -->
+            <header class="header">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <svg class="logo-svg" viewBox="0 0 100 100" width="38" height="38">
+                            <defs>
+                                <linearGradient id="cyber-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#00f0f0" />
+                                    <stop offset="100%" stop-color="#6366f1" />
+                                </linearGradient>
+                                <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                                    <feGaussianBlur stdDeviation="4" result="blur" />
+                                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                </filter>
+                            </defs>
+                            <circle cx="50" cy="50" r="42" stroke="url(#cyber-grad)" stroke-width="4" fill="none" opacity="0.8" />
+                            <path d="M 50 8 A 42 42 0 0 1 84 26 L 68 40 L 50 8 Z" fill="url(#cyber-grad)" opacity="0.3" />
+                            <path d="M 92 50 A 42 42 0 0 1 74 84 L 60 68 L 92 50 Z" fill="url(#cyber-grad)" opacity="0.3" />
+                            <path d="M 50 92 A 42 42 0 0 1 16 74 L 32 60 L 50 92 Z" fill="url(#cyber-grad)" opacity="0.3" />
+                            <path d="M 8 50 A 42 42 0 0 1 26 16 L 40 32 L 8 50 Z" fill="url(#cyber-grad)" opacity="0.3" />
+                            <circle class="pupil-outer" cx="50" cy="50" r="16" fill="rgba(0, 240, 240, 0.15)" stroke="#00f0f0" stroke-width="1.5" filter="url(#glow)" />
+                            <circle class="pupil-inner" cx="50" cy="50" r="7" fill="#00f0f0" filter="url(#glow)" />
+                        </svg>
+                    </div>
+                    <div class="logo-text">
+                        <h1>智眸录屏</h1>
+                        <span class="badge loading" id="gpu-badge">⌛ 资源加载中...</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Dashboard -->
+            <main class="dashboard">
+                <!-- Recording Area Selector -->
+                <section class="card area-card">
+                    <div class="card-header">
+                        <span class="icon">📐</span>
+                        <h2>录制区域</h2>
+                    </div>
+                    <div class="area-display">
+                        <div class="select-wrapper">
+                            <select id="monitor-select" class="styled-select">
+                                <option value="custom">🎯 框选录制区域</option>
+                                <option value="all">🖥️ 全屏幕 (合并桌面)</option>
+                                <!-- Dynamically loaded monitors -->
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" id="select-area-btn" title="鼠标拖拽框选任意区域">
+                            <span>🎯</span> 框选区域
+                        </button>
+                    </div>
+                    <div class="coordinates" id="coords-text">
+                        未选择区域（默认全屏）
+                    </div>
+                </section>
+
+                <!-- Audio Settings -->
+                <section class="card audio-card">
+                    <div class="card-header">
+                        <span class="icon">🔊</span>
+                        <h2>音频设置</h2>
+                    </div>
+                    <div class="audio-toggles">
+                        <!-- System Audio -->
+                        <div class="toggle-item">
+                            <label for="sys-audio-toggle" class="toggle-label">
+                                <span class="sub-icon">💻</span> 系统声音 (声卡)
+                            </label>
+                            <label class="switch">
+                                <input type="checkbox" id="sys-audio-toggle" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+
+                        <!-- Mic Audio -->
+                        <div class="toggle-item">
+                            <label for="mic-audio-toggle" class="toggle-label">
+                                <span class="sub-icon">🎙️</span> 麦克风录音
+                            </label>
+                            <label class="switch">
+                                <input type="checkbox" id="mic-audio-toggle">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Mic Selection Dropdown -->
+                    <div class="select-container hidden" id="mic-select-container">
+                        <select id="mic-select">
+                            <option value="default">默认麦克风</option>
+                        </select>
+                    </div>
+                </section>
+
+                <!-- Storage Options -->
+                <section class="card storage-card">
+                    <div class="card-header">
+                        <span class="icon">📁</span>
+                        <h2>保存位置</h2>
+                    </div>
+                    <div class="folder-input-container">
+                        <input type="text" id="output-path" placeholder="C:\Users\...\Videos" readonly>
+                        <button class="btn btn-icon" id="open-folder-btn" title="打开此文件夹">
+                            📂
+                        </button>
+                    </div>
+                </section>
+
+                <!-- Status Indicator / Auto Naming Preview -->
+                <section class="status-panel">
+                    <div class="recording-preview" id="preview-text">
+                        准备就绪，文件名将自动按当前时间命名。
+                    </div>
+                </section>
+            </main>
+
+            <!-- Bottom Action Bar -->
+            <footer class="footer">
+                <button class="btn-record" id="record-btn">
+                    <div class="record-circle"></div>
+                    <span id="record-btn-text">开始录制</span>
+                </button>
+            </footer>
+        </div>
+
+        <!-- Compact Floating Toolbar -->
+        <div class="compact-toolbar" id="compact-toolbar">
+            <div class="drag-handle" id="drag-handle" title="拖动悬浮窗">
+                <span class="drag-dots">⋮⋮</span>
+            </div>
+            
+            <div class="compact-status-container">
+                <span class="rec-dot-glow" id="compact-rec-dot"></span>
+                <span id="compact-timer">准备就绪</span>
+                <span class="resolution-badge" id="compact-res">0x0</span>
+            </div>
+
+            <div class="compact-actions">
+                <button class="btn-compact-record" id="compact-record-btn" title="开始/停止录制">
+                    <div class="compact-record-icon"></div>
+                </button>
+                <button class="btn-compact-cancel" id="compact-cancel-btn" title="取消区域选择">
+                    ✕
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>
