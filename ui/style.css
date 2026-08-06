@@ -1,4 +1,4 @@
-/* Modern Glassmorphic Dark Design System */
+/* 现代玻璃拟态暗色 UI 设计系统 */
 
 :root {
     --bg-color: #0c0e12;
@@ -58,13 +58,13 @@ body {
     gap: 14px;
 }
 
-/* Custom Titlebar */
+/* 自定义无边框窗口标题栏 */
 .window-titlebar {
     height: 32px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin: 0 -20px 8px -20px; /* Flush to left/right edges of container */
+    margin: 0 -20px 8px -20px; /* 与容器左右边缘齐平 */
     padding: 0 8px 0 16px;
     background: rgba(10, 12, 16, 0.45);
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
@@ -124,7 +124,7 @@ body.compact-mode .window-titlebar {
     color: white;
 }
 
-/* Header */
+/* 顶部 Logo 与标题区 */
 .header {
     margin-bottom: 12px;
 }
@@ -162,6 +162,7 @@ body.compact-mode .window-titlebar {
     transition: all 0.3s ease;
 }
 
+/* 资源加载中状态徽章：琥珀色呼吸动画 */
 .logo-text .badge.loading {
     color: #f59e0b;
     background: rgba(245, 158, 11, 0.12);
@@ -169,6 +170,7 @@ body.compact-mode .window-titlebar {
     animation: badgePulse 1.5s infinite;
 }
 
+/* 资源加载完成状态徽章：翠绿色 */
 .logo-text .badge.ready {
     color: #10b981;
     background: rgba(16, 185, 129, 0.12);
@@ -180,7 +182,7 @@ body.compact-mode .window-titlebar {
     50% { opacity: 0.6; }
 }
 
-/* Dashboard Cards */
+/* 主面板卡片布局 */
 .dashboard {
     display: flex;
     flex-direction: column;
@@ -220,7 +222,7 @@ body.compact-mode .window-titlebar {
     letter-spacing: 0.5px;
 }
 
-/* Specific Card Layouts */
+/* 录制区域选择器卡片 */
 .area-display {
     display: flex;
     gap: 12px;
@@ -238,7 +240,7 @@ body.compact-mode .window-titlebar {
     color: var(--text-primary);
 }
 
-/* Audio toggles */
+/* 音频开关选项 */
 .audio-toggles {
     display: flex;
     flex-direction: column;
@@ -263,7 +265,7 @@ body.compact-mode .window-titlebar {
     font-size: 16px;
 }
 
-/* Dropdown Container */
+/* 下拉选择框容器（淡入动画） */
 .select-container {
     margin-top: 10px;
     animation: fadeIn 0.3s ease-in-out;
@@ -290,7 +292,7 @@ select:focus {
     border-color: var(--accent-cyan);
 }
 
-/* Folder selector */
+/* 保存目录输入框 */
 .folder-input-container {
     display: flex;
     gap: 10px;
@@ -310,7 +312,7 @@ select:focus {
     text-overflow: ellipsis;
 }
 
-/* Status Panel */
+/* 录制状态提示面板 */
 .status-panel {
     background: rgba(0, 0, 0, 0.2);
     border-radius: 10px;
@@ -325,7 +327,7 @@ select:focus {
     font-weight: 300;
 }
 
-/* Buttons */
+/* 通用按钮样式 */
 .btn {
     display: flex;
     align-items: center;
@@ -372,7 +374,7 @@ select:focus {
     background: rgba(255, 255, 255, 0.12);
 }
 
-/* Toggle Switches */
+/* 拨动开关样式 */
 .switch {
     position: relative;
     display: inline-block;
@@ -430,7 +432,7 @@ input:checked + .slider:before {
     border-radius: 50%;
 }
 
-/* Footer & Record Button */
+/* 底部页脚与主录制按钮 */
 .footer {
     display: flex;
     justify-content: center;
@@ -476,7 +478,7 @@ input:checked + .slider:before {
     transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* Recording State */
+/* 录制中按钮状态 */
 .btn-record.recording {
     background: linear-gradient(135deg, var(--record-red) 0%, #b91c1c 100%);
     box-shadow: 0 4px 24px var(--record-red-glow);
@@ -493,7 +495,7 @@ input:checked + .slider:before {
     transform: scale(0.9);
 }
 
-/* Animations */
+/* 全局过渡动画关键帧 */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-5px); }
     to { opacity: 1; transform: translateY(0); }
@@ -511,7 +513,7 @@ input:checked + .slider:before {
     }
 }
 
-/* Compact mode resets */
+/* 紧凑悬浮控制条模式重置 */
 body.compact-mode {
     background: transparent !important;
 }
@@ -532,7 +534,7 @@ body.compact-mode .footer {
     display: none !important;
 }
 
-/* Compact Toolbar Layout */
+/* 紧凑悬浮控制条布局 */
 .compact-toolbar {
     display: none;
     width: 100%;
@@ -551,7 +553,7 @@ body.compact-mode .compact-toolbar {
     display: flex;
 }
 
-/* Drag Handle */
+/* 悬浮条拖拽手柄 */
 .drag-handle {
     cursor: move;
     padding: 8px;
@@ -571,7 +573,7 @@ body.compact-mode .compact-toolbar {
     font-weight: bold;
 }
 
-/* Compact Status */
+/* 悬浮条录制状态与计时器 */
 .compact-status-container {
     display: flex;
     align-items: center;
@@ -604,6 +606,7 @@ body.compact-mode .compact-toolbar {
     transition: background-color 0.3s;
 }
 
+/* 录制中：指示灯变红并加入呼吸闪烁动画 */
 body.recording .rec-dot-glow {
     background-color: var(--record-red);
     box-shadow: 0 0 8px var(--record-red);
@@ -616,7 +619,7 @@ body.recording .rec-dot-glow {
     100% { opacity: 0.3; }
 }
 
-/* Actions */
+/* 悬浮控制条按钮组 */
 .compact-actions {
     display: flex;
     align-items: center;
@@ -650,7 +653,7 @@ body.recording .rec-dot-glow {
     transition: all 0.2s;
 }
 
-/* Recording State in Compact */
+/* 紧凑悬浮条录制中状态 */
 body.recording .btn-compact-record {
     background: linear-gradient(135deg, var(--record-red) 0%, #b91c1c 100%);
     box-shadow: 0 0 12px var(--record-red-glow);
@@ -680,7 +683,7 @@ body.recording .compact-record-icon {
     transform: scale(1.1);
 }
 
-/* Animated Cyber Eye Logo */
+/* 赛博眼睛 Logo 旋转与瞳孔脉冲动画 */
 .logo-svg {
     filter: drop-shadow(0 0 6px var(--accent-cyan-glow));
     animation: rotateAperture 30s linear infinite;
