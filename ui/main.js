@@ -1,15 +1,22 @@
-// Global recording parameters
-let cropX = 0;
-let cropY = 0;
-let cropW = 0;
-let cropH = 0;
-let isRecording = false;
-let recordStartTime = null;
-let timerInterval = null;
-let defaultOutputFolder = '';
-let lastRecordedFile = '';
+/**
+ * 智眸录屏 - 前端交互控制逻辑 (main.js)
+ * 负责 UI 事件监听、DOM 状态更新、计时器、与 C++ 后端 WebView2 IPC 通信
+ */
 
-// DOM Elements - Main Layout
+// ==========================================
+// 全局录制参数与状态
+// ==========================================
+let cropX = 0;                  // 录制起点 X
+let cropY = 0;                  // 录制起点 Y
+let cropW = 0;                  // 录制宽度
+let cropH = 0;                  // 录制高度
+let isRecording = false;        // 当前是否正在录制
+let recordStartTime = null;     // 录制开始时间戳
+let timerInterval = null;       // 计时器 Interval 定时器句柄
+let defaultOutputFolder = '';   // 默认保存路径（系统 Videos 文件夹）
+let lastRecordedFile = '';      // 最近录制的文件名
+
+// DOM 元素引用 - 主面板布局
 const gpuBadge = document.getElementById('gpu-badge');
 const coordsText = document.getElementById('coords-text');
 const selectAreaBtn = document.getElementById('select-area-btn');
@@ -25,7 +32,7 @@ const previewText = document.getElementById('preview-text');
 const recordBtn = document.getElementById('record-btn');
 const recordBtnText = document.getElementById('record-btn-text');
 
-// DOM Elements - Compact Layout
+// DOM 元素引用 - 悬浮控制条布局
 const compactToolbar = document.getElementById('compact-toolbar');
 const dragHandle = document.getElementById('drag-handle');
 const compactTimer = document.getElementById('compact-timer');
@@ -33,37 +40,49 @@ const compactRes = document.getElementById('compact-res');
 const compactRecordBtn = document.getElementById('compact-record-btn');
 const compactCancelBtn = document.getElementById('compact-cancel-btn');
 
-// Initialize communication with C++
+// ==========================================
+// 页面初始化与 WebView2 事件绑定
+// ==========================================
 document.addEventListener('DOMContentLoaded', () => {
     if (window.chrome && window.chrome.webview) {
+        // 绑定来自 C++ 宿主程序发送的消息监听
         window.chrome.webview.addEventListener('message', handleBackendMessage);
+        // 向 C++ 发送初始化与加载状态请求
         sendMessageToBackend({ action: 'init' });
         sendMessageToBackend({ action: 'get_init_status' });
     } else {
-        gpuBadge.textContent = "CPU (x264) - 浏览器模式";
+        // 纯浏览器预览模式（非 C++ 环境）
+        gpuBadge.textContent = "CPU (x264) - 浏览器预览模式";
         outputPathInput.value = "C:\\Users\\MockUser\\Videos";
     }
 });
 
-// Helper to send messages to C++ backend
+/**
+ * @brief 向 C++ 后端发送 IPC JSON 消息
+ * @param {Object} data 待发送的 JS 消息对象
+ */
 function sendMessageToBackend(data) {
     if (window.chrome && window.chrome.webview) {
         window.chrome.webview.postMessage(JSON.stringify(data));
     }
 }
 
-// Handle messages from C++ backend
+/**
+ * @brief 接收并处理来自 C++ 后端的 JSON 消息
+ * @param {MessageEvent} event 包含 C++ 回传数据的事件
+ */
 function handleBackendMessage(event) {
     let data = {};
     try {
         data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
     } catch (e) {
-        console.error("Failed to parse message from C++", e);
+        console.error("解析来自 C++ 的消息失败", e);
         return;
     }
 
     switch (data.action) {
         case 'init_status':
+            // 资源与显卡探测就绪通知
             if (data.status === 'ready') {
                 const titleText = document.getElementById('titlebar-text');
                 if (titleText) titleText.textContent = "智眸录屏 - 资源加载完成";
@@ -78,13 +97,13 @@ function handleBackendMessage(event) {
             break;
 
         case 'init_response':
+            // 初始化硬件与设备下拉框数据
             gpuBadge.textContent = "编码加速: " + data.encoder;
             defaultOutputFolder = data.defaultFolder;
             outputPathInput.value = defaultOutputFolder;
 
-            // Load monitors
+            // 加载显示器列表
             monitorsList = data.monitors || [];
-            // Remove previous dynamic options (leave custom and all)
             while (monitorSelect.options.length > 2) {
                 monitorSelect.remove(2);
             }
@@ -95,6 +114,7 @@ function handleBackendMessage(event) {
                 monitorSelect.appendChild(opt);
             });
 
+            // 加载麦克风设备列表
             micSelect.innerHTML = '';
             if (data.mics && data.mics.length > 0) {
                 data.mics.forEach(mic => {
@@ -114,6 +134,7 @@ function handleBackendMessage(event) {
             break;
 
         case 'select_area_response':
+            // 处理框选覆盖层返回的结果
             if (data.cancelled) {
                 cropX = cropY = cropW = cropH = 0;
                 coordsText.textContent = "未选择区域（默认全屏）";
@@ -129,7 +150,7 @@ function handleBackendMessage(event) {
                 coordsText.classList.add('active');
                 monitorSelect.value = 'custom';
 
-                // Enter compact floating toolbar layout
+                // 进入录制悬浮条紧凑模式
                 compactRes.textContent = `${cropW}x${cropH}`;
                 compactTimer.textContent = "准备就绪";
                 document.body.classList.remove('recording');
@@ -138,6 +159,7 @@ function handleBackendMessage(event) {
             break;
 
         case 'crop_updated':
+            // 响应 C++ RecordBorder 手柄拖拽/平移更新坐标
             cropX = data.x;
             cropY = data.y;
             cropW = data.w;
@@ -148,13 +170,14 @@ function handleBackendMessage(event) {
             break;
 
         case 'start_recording_response':
+            // 录制启动结果反馈
             if (data.success) {
                 isRecording = true;
                 lastRecordedFile = data.filename;
                 
                 recordBtn.classList.add('recording');
                 recordBtnText.textContent = "停止录制";
-                document.body.classList.add('recording'); // Toggles compact pulse indicators
+                document.body.classList.add('recording');
                 
                 startTimer();
             } else {
@@ -165,16 +188,17 @@ function handleBackendMessage(event) {
             break;
 
         case 'stop_recording_response':
+            // 录制停止结果反馈
             isRecording = false;
             
             recordBtn.classList.remove('recording');
             recordBtnText.textContent = "开始录制";
             document.body.classList.remove('recording');
-            document.body.classList.remove('compact-mode'); // Restores normal app layout
+            document.body.classList.remove('compact-mode');
             
             stopTimer();
 
-            // Display completion status in normal panel
+            // 绘制录制完成与打开文件超链接
             const finalFilePath = defaultOutputFolder + "\\" + lastRecordedFile;
             previewText.innerHTML = `录制完成！已保存为 <a href="#" id="play-video-link" style="color:#00f0f0; text-decoration:underline;">${lastRecordedFile}</a>`;
             
@@ -186,7 +210,11 @@ function handleBackendMessage(event) {
     }
 }
 
-// Microphone toggle layout visibility
+// ==========================================
+// 界面交互控件事件绑定
+// ==========================================
+
+// 麦克风开关与设备下拉框显示联动
 micAudioToggle.addEventListener('change', () => {
     if (micAudioToggle.checked) {
         micSelectContainer.classList.remove('hidden');
@@ -195,17 +223,17 @@ micAudioToggle.addEventListener('change', () => {
     }
 });
 
-// Area selector trigger
+// 点击“框选区域”按钮
 selectAreaBtn.addEventListener('click', () => {
     sendMessageToBackend({ action: 'select_area' });
 });
 
-// Open storage directory
+// 点击“打开保存目录”按钮
 openFolderBtn.addEventListener('click', () => {
     sendMessageToBackend({ action: 'open_folder', folder: outputPathInput.value });
 });
 
-// Monitor selection logic
+// 显示器/区域选择下拉框切换
 monitorSelect.addEventListener('change', () => {
     const val = monitorSelect.value;
     if (val === 'custom') {
@@ -243,7 +271,7 @@ monitorSelect.addEventListener('change', () => {
     }
 });
 
-// Record control main button logic
+// 点击“开始录制 / 停止录制”主按钮
 recordBtn.addEventListener('click', () => {
     if (!isRecording) {
         const recordMic = micAudioToggle.checked && micSelect.value !== '';
@@ -251,7 +279,7 @@ recordBtn.addEventListener('click', () => {
         const recordSysAudio = sysAudioToggle.checked;
         const outputFolder = outputPathInput.value;
 
-        // Default to Primary Monitor if no area is specified
+        // 若未指定特殊选区，默认使用第一主显示器尺寸
         if (cropW === 0 || cropH === 0) {
             if (monitorsList.length > 0) {
                 const mon = monitorsList[0];
@@ -281,12 +309,12 @@ recordBtn.addEventListener('click', () => {
     }
 });
 
-// Drag handle for custom borderless window drag
+// 悬浮手柄窗口按住拖拽
 dragHandle.addEventListener('mousedown', () => {
     sendMessageToBackend({ action: 'start_drag' });
 });
 
-// Compact mode cancel/back button
+// 点击悬浮控制条中的取消选区按钮
 compactCancelBtn.addEventListener('click', () => {
     sendMessageToBackend({ action: 'cancel_selection' });
     document.body.classList.remove('compact-mode');
@@ -296,12 +324,14 @@ compactCancelBtn.addEventListener('click', () => {
     coordsText.classList.remove('active');
 });
 
-// Compact Record/Stop delegates directly to the validated main button
+// 点击悬浮控制条中的录制/停止按钮，委托至主按钮
 compactRecordBtn.addEventListener('click', () => {
     recordBtn.click();
 });
 
-// Timer formatting helper (00:00:00)
+// ==========================================
+// 录制计时器工具 (00:00:00 格式化)
+// ==========================================
 function startTimer() {
     recordStartTime = Date.now();
     updateTimerText();
@@ -336,7 +366,9 @@ function stopTimer() {
     compactTimer.textContent = "准备就绪";
 }
 
-// Custom Titlebar controls
+// ==========================================
+// 自定义无边框窗口标题栏控件绑定
+// ==========================================
 const winMinBtn = document.getElementById('win-min-btn');
 const winCloseBtn = document.getElementById('win-close-btn');
 const titlebarDragArea = document.getElementById('titlebar-drag-area');
@@ -363,27 +395,22 @@ function logToBackend(msg) {
     sendMessageToBackend({ action: 'log', message: msg });
 }
 
-// Dynamic auto-resizing observer for normal window height
+// ==========================================
+// 动态 DOM 容器尺寸监听 (自动调适 Win32 窗口高度)
+// ==========================================
 let lastSentHeight = 0;
 let resizeTimeout = null;
 const resizeObserver = new ResizeObserver(entries => {
     for (let entry of entries) {
         if (document.body.classList.contains('compact-mode')) continue;
-        // Query the scrollHeight of #content-measure-wrapper and add 28px for .app-container's padding-bottom
         const height = Math.ceil(entry.target.scrollHeight) + 28;
         
-        logToBackend(`JS: ResizeObserver triggered. contentHeight=${height - 28}, totalHeight=${height}, lastSentHeight=${lastSentHeight}, bodyHeight=${document.body.scrollHeight}`);
-        
-        // Only trigger if height changes by more than 2 pixels
         if (Math.abs(height - lastSentHeight) > 2) {
             if (resizeTimeout) {
                 clearTimeout(resizeTimeout);
-                logToBackend(`JS: Cleared pending resize timeout`);
             }
-            logToBackend(`JS: Scheduling resize to height=${height}`);
             resizeTimeout = setTimeout(() => {
                 lastSentHeight = height;
-                logToBackend(`JS: Timeout fired! Sending resize_window h=${height}`);
                 sendMessageToBackend({ action: 'resize_window', h: height });
                 resizeTimeout = null;
             }, 200);
@@ -393,11 +420,10 @@ const resizeObserver = new ResizeObserver(entries => {
 
 const contentWrapper = document.getElementById('content-measure-wrapper');
 if (contentWrapper) {
-    // Start observing size updates
     resizeObserver.observe(contentWrapper);
 }
 
-// Expose hooks for system tray menu (called via C++ ExecuteScript)
+// 供 Windows 托盘右键菜单调用的全局钩子
 window.__startRecording = () => {
     if (!isRecording) recordBtn.click();
 };

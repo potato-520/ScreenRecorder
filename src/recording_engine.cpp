@@ -10,7 +10,7 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <dxgi.h>
 
-// Helper to convert std::wstring to std::string
+/// 辅助工具：将 std::wstring 转换为 UTF-8 编码的 std::string
 static std::string WStringToString(const std::wstring& wstr) {
     if (wstr.empty()) return "";
     int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
@@ -31,20 +31,21 @@ RecordingEngine::~RecordingEngine() {
 bool RecordingEngine::Init() {
     if (m_initialized) return true;
 
+    // 1. 获取释放于 AppData 目录下的 ffmpeg.exe 路径
     m_ffmpegPath = GetFFmpegPath();
     if (m_ffmpegPath.empty()) {
-        std::cerr << "FFmpeg not found in application directory!" << std::endl;
+        std::cerr << "未找到 FFmpeg 录制引擎路径！" << std::endl;
         return false;
     }
 
-    // Auto-detect the best hardware encoder
+    // 2. 自动检测并选择最佳显卡硬件编码器
     DetectBestEncoder();
     m_initialized = true;
     return true;
 }
 
 std::string RecordingEngine::GetFFmpegPath() const {
-    // Check inside %APPDATA%\ScreenRecorder\ffmpeg.exe (our static packaging target)
+    // 优先检查 AppData\ScreenRecorder\ffmpeg.exe
     wchar_t appDataPath[MAX_PATH];
     SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appDataPath);
     std::wstring ffmpegPath = std::wstring(appDataPath) + L"\\ScreenRecorder\\ffmpeg.exe";
@@ -53,13 +54,13 @@ std::string RecordingEngine::GetFFmpegPath() const {
         return WStringToString(ffmpegPath);
     }
 
-    // Fallback: check system path
+    // 回退机制：若无释放文件则尝试使用环境变量 PATH 中的 ffmpeg.exe
     return "ffmpeg.exe";
 }
 
 bool RecordingEngine::ProbeEncoder(const std::string& encoderName) {
-    // Run a tiny test encoding of 1 frame with the target encoder
-    // Command: ffmpeg.exe -y -f lavfi -i color=c=black:s=64x64 -frames:v 1 -c:v ENCODER -f null -
+    // 运行 1 帧的微型测试命令来验证目标编码器是否在当前显卡驱动下可用
+    // 测试指令：ffmpeg.exe -y -f lavfi -i color=c=black:s=64x64 -frames:v 1 -c:v ENCODER -f null -
     std::string cmd = "\"" + m_ffmpegPath + "\" -y -f lavfi -i color=c=black:s=64x64 -frames:v 1 -c:v " + encoderName + " -f null -";
 
     STARTUPINFOA si = { sizeof(si) };
@@ -67,7 +68,6 @@ bool RecordingEngine::ProbeEncoder(const std::string& encoderName) {
     si.wShowWindow = SW_HIDE;
     PROCESS_INFORMATION pi = {};
 
-    // Copy command line to mutable buffer
     std::vector<char> cmdBuf(cmd.begin(), cmd.end());
     cmdBuf.push_back('\0');
 
@@ -80,13 +80,13 @@ bool RecordingEngine::ProbeEncoder(const std::string& encoderName) {
         return false;
     }
 
-    // Wait for probe process to complete (max 2 seconds)
+    // 最多等待测试子进程执行 2 秒
     DWORD waitResult = WaitForSingleObject(pi.hProcess, 2000);
     DWORD exitCode = 1;
     if (waitResult == WAIT_OBJECT_0) {
         GetExitCodeProcess(pi.hProcess, &exitCode);
     } else {
-        // Hung probe, terminate it
+        // 若测试超时卡死，强制终止子进程
         TerminateProcess(pi.hProcess, 1);
     }
 
@@ -97,7 +97,7 @@ bool RecordingEngine::ProbeEncoder(const std::string& encoderName) {
 }
 
 void RecordingEngine::DetectBestEncoder() {
-    // 1. Query GPU manufacturer using DXGI
+    // 1. 通过 DXGI API 查询第一块显卡供应商 VendorID
     UINT vendorId = 0;
     IDXGIFactory1* pFactory = nullptr;
     if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&pFactory)))) {
@@ -112,37 +112,37 @@ void RecordingEngine::DetectBestEncoder() {
         pFactory->Release();
     }
 
-    // 2. Sort GPU encoders based on detected hardware
+    // 2. 根据显卡厂商排列编码器候选优先级
     std::vector<std::pair<std::string, std::string>> candidates;
-    if (vendorId == 0x10DE) { // NVIDIA
+    if (vendorId == 0x10DE) { // NVIDIA N卡
         candidates = {
-            {"h264_nvenc", "NVIDIA NVENC (加速)"},
+            {"h264_nvenc", "NVIDIA NVENC (硬件加速)"},
             {"h264_mf", "Windows Media Foundation (GPU)"},
             {"libx264", "CPU (兼容模式)"}
         };
-    } else if (vendorId == 0x1002 || vendorId == 0x1022) { // AMD
+    } else if (vendorId == 0x1002 || vendorId == 0x1022) { // AMD A卡
         candidates = {
-            {"h264_amf", "AMD AMF (加速)"},
+            {"h264_amf", "AMD AMF (硬件加速)"},
             {"h264_mf", "Windows Media Foundation (GPU)"},
             {"libx264", "CPU (兼容模式)"}
         };
-    } else if (vendorId == 0x8086) { // Intel
+    } else if (vendorId == 0x8086) { // Intel I卡/核显
         candidates = {
-            {"h264_qsv", "Intel QuickSync (加速)"},
+            {"h264_qsv", "Intel QuickSync (硬件加速)"},
             {"h264_mf", "Windows Media Foundation (GPU)"},
             {"libx264", "CPU (兼容模式)"}
         };
-    } else { // Generic or unknown
+    } else { // 独立显卡未知或通用环境
         candidates = {
             {"h264_mf", "Windows Media Foundation (GPU)"},
-            {"h264_nvenc", "NVIDIA NVENC (加速)"},
-            {"h264_amf", "AMD AMF (加速)"},
-            {"h264_qsv", "Intel QuickSync (加速)"},
+            {"h264_nvenc", "NVIDIA NVENC (硬件加速)"},
+            {"h264_amf", "AMD AMF (硬件加速)"},
+            {"h264_qsv", "Intel QuickSync (硬件加速)"},
             {"libx264", "CPU (兼容模式)"}
         };
     }
 
-    // 3. Test candidates using the FFmpeg probe
+    // 3. 顺序探测可用的编码器
     for (const auto& candidate : candidates) {
         if (candidate.first == "libx264") {
             m_bestEncoder = candidate.first;
@@ -161,7 +161,6 @@ void RecordingEngine::DetectBestEncoder() {
 std::vector<AudioDevice> RecordingEngine::GetMicrophoneDevices() {
     std::vector<AudioDevice> devices;
 
-    // Initialize COM (usually already initialized by WebView2, but safe to call)
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
     IMMDeviceEnumerator* pEnumerator = nullptr;
@@ -176,7 +175,7 @@ std::vector<AudioDevice> RecordingEngine::GetMicrophoneDevices() {
     }
 
     IMMDeviceCollection* pCollection = nullptr;
-    // eCapture for input/microphone endpoints
+    // eCapture: 抓取麦克风输入音频终端
     hr = pEnumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &pCollection);
     if (SUCCEEDED(hr)) {
         UINT count = 0;
@@ -221,11 +220,11 @@ bool RecordingEngine::StartRecording(
     std::string& outError
 ) {
     if (m_recording) {
-        outError = "Already recording.";
+        outError = "已在录制中。";
         return false;
     }
 
-    // 1. Generate filename using local time
+    // 1. 生成基于当前本地时间的录像文件名
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
     std::tm bt = {};
@@ -237,24 +236,22 @@ bool RecordingEngine::StartRecording(
        << ".mp4";
     outFilename = ss.str();
 
-    // 2. Prepare output path
+    // 2. 准备输出路径与创建目录
     std::string outPath = outputFolder;
     if (outPath.empty()) {
-        outError = "Output folder is empty.";
+        outError = "输出保存目录不能为空。";
         return false;
     }
     
-    // Ensure folder has a trailing slash
     char lastChar = outPath.back();
     if (lastChar != '\\' && lastChar != '/') {
         outPath += "\\";
     }
     
-    // Create output folder if it doesn't exist
     CreateDirectoryA(outPath.c_str(), NULL);
     std::string fullOutputPath = outPath + outFilename;
 
-    // Ensure width and height are even (h264 requirements)
+    // 校正录制区域坐标与偶数尺寸要求 (满足 H.264 4:2:0 采样对齐)
     int finalX = x;
     int finalY = y;
     int finalWidth = width;
@@ -270,17 +267,17 @@ bool RecordingEngine::StartRecording(
     if (abs(finalX) % 2 != 0) finalX = (finalX > 0) ? finalX - 1 : finalX + 1;
     if (abs(finalY) % 2 != 0) finalY = (finalY > 0) ? finalY - 1 : finalY + 1;
 
-    // 3. Assemble FFmpeg command
+    // 3. 拼接 FFmpeg 命令行参数
     std::ostringstream cmd;
     cmd << "\"" << m_ffmpegPath << "\" -y";
 
-    // Video input (GDIGRAB)
+    // 视频输入流 (使用 Windows GDI 设备抓取桌面)
     cmd << " -f gdigrab -framerate 30 -offset_x " << finalX << " -offset_y " << finalY 
         << " -video_size " << finalWidth << "x" << finalHeight << " -i desktop";
 
     bool hasMicInput = recordMic && !micDeviceName.empty();
     if (hasMicInput) {
-        // Use DirectShow (dshow) for microphone capture on Windows
+        // 使用 Windows DirectShow (dshow) 抓取麦克风输入
         cmd << " -f dshow -i audio=\"" << micDeviceName << "\"";
     }
 
@@ -290,7 +287,7 @@ bool RecordingEngine::StartRecording(
     m_hAudioPipe = INVALID_HANDLE_VALUE;
 
     if (m_recordSysAudio) {
-        // Query system mix format for sample rate and channels
+        // 查询默认声卡的采样率与声道数
         int sampleRate = 48000;
         int channels = 2;
 
@@ -313,7 +310,7 @@ bool RecordingEngine::StartRecording(
             pEnumerator->Release();
         }
 
-        // Create Named Pipe for loopback audio transmission
+        // 创建传输系统回放音频的命名管道 (Named Pipe)
         m_hAudioPipe = CreateNamedPipeA(
             "\\\\.\\pipe\\ScreenRecorderAudioPipe",
             PIPE_ACCESS_OUTBOUND,
@@ -329,28 +326,24 @@ bool RecordingEngine::StartRecording(
         }
     }
 
-    // Force constant framerate (CFR) to prevent non-monotonic DTS warnings and video timestamp drift
+    // 强制输出恒定帧率 (CFR)，防止帧率漂移与时间戳非单调警告
     cmd << " -fps_mode cfr";
 
-    // Encoder configuration (utilize auto-detected best encoder)
+    // 编码器参数配置
     cmd << " -c:v " << m_bestEncoder;
     if (m_bestEncoder == "libx264") {
-        // libx264: ultrafast for screen recording, yuv420p for max compatibility
         cmd << " -preset ultrafast -pix_fmt yuv420p";
     } else if (m_bestEncoder == "h264_nvenc") {
-        // NVIDIA NVENC: -tune is NOT supported, use -zerolatency for low-latency capture
         cmd << " -preset fast -pix_fmt yuv420p -zerolatency 1";
     } else if (m_bestEncoder == "h264_amf") {
-        // AMD AMF: speed quality mode
         cmd << " -pix_fmt yuv420p -quality speed";
     } else if (m_bestEncoder == "h264_qsv") {
-        // Intel QSV: nv12 pixel format required
         cmd << " -pix_fmt nv12 -preset veryfast";
-    } else { // h264_mf or others
+    } else {
         cmd << " -pix_fmt yuv420p";
     }
 
-    // Audio mixing and output mapping
+    // 音频混音与映射配置
     if (hasMicInput && m_recordSysAudio) {
         cmd << " -filter_complex \"[1:a][2:a]amix=inputs=2[a]\" -map 0:v -map \"[a]\" -c:a aac -b:a 128k";
     } else if (hasMicInput) {
@@ -361,20 +354,13 @@ bool RecordingEngine::StartRecording(
         cmd << " -an";
     }
 
-    // Use fragmented MP4 (fMP4) for crash-safe output:
-    // - frag_keyframe: write a new fragment at each keyframe
-    // - empty_moov:    write an empty moov atom at start so file is immediately playable
-    // - default_base_moof: improves player compatibility
-    // This ensures the file is playable even if the process crashes mid-recording.
+    // 使用分片 MP4 (fMP4) 提高防崩溃容错性
     cmd << " -movflags frag_keyframe+empty_moov+default_base_moof";
-
-    // Output file path directly
     cmd << " \"" << m_finalOutputPath << "\"";
-
 
     std::string cmdStr = cmd.str();
 
-    // 4. Set up security attributes for inheritable pipe
+    // 4. 创建继承的匿名管道用于传输 'q' 键停止信号给 FFmpeg stdin
     SECURITY_ATTRIBUTES saAttr;
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = TRUE;
@@ -382,21 +368,13 @@ bool RecordingEngine::StartRecording(
 
     HANDLE hPipeRead = nullptr;
     if (!CreatePipe(&hPipeRead, &m_hStdInWrite, &saAttr, 0)) {
-        outError = "Failed to create stdin pipe.";
+        outError = "创建 stdin 管道失败。";
         return false;
     }
 
-    // Ensure the write handle to the pipe is not inherited
-    if (!SetHandleInformation(m_hStdInWrite, HANDLE_FLAG_INHERIT, 0)) {
-        outError = "Failed to set handle info on pipe write handle.";
-        CloseHandle(hPipeRead);
-        CloseHandle(m_hStdInWrite);
-        m_hStdInWrite = nullptr;
-        return false;
-    }
+    SetHandleInformation(m_hStdInWrite, HANDLE_FLAG_INHERIT, 0);
 
-    // 5. Start process
-    // Create a log file for FFmpeg output in the target folder to prevent blockages/crashes
+    // 5. 启动 FFmpeg 录制子进程
     std::string logPath = outputFolder;
     if (!logPath.empty()) {
         char lastChar = logPath.back();
@@ -406,7 +384,6 @@ bool RecordingEngine::StartRecording(
     }
     std::string logFile = logPath + "ffmpeg_log.txt";
 
-    // Re-use saAttr which allows handle inheritance
     HANDLE hLogFile = CreateFileA(
         logFile.c_str(),
         GENERIC_WRITE,
@@ -427,25 +404,23 @@ bool RecordingEngine::StartRecording(
         si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
     }
     si.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE; // Hide console window completely
+    si.wShowWindow = SW_HIDE; // 静默后台运行控制台
 
-    // Copy command to mutable buffer
     std::vector<char> cmdBuf(cmdStr.begin(), cmdStr.end());
     cmdBuf.push_back('\0');
 
     BOOL success = CreateProcessA(
-        NULL, cmdBuf.data(), NULL, NULL, TRUE, // TRUE to inherit handles (crucial for pipe)
+        NULL, cmdBuf.data(), NULL, NULL, TRUE,
         CREATE_NO_WINDOW, NULL, NULL, &si, &m_pi
     );
 
-    // Read handle and log file handle no longer needed in parent process
     CloseHandle(hPipeRead);
     if (hLogFile != INVALID_HANDLE_VALUE) {
         CloseHandle(hLogFile);
     }
 
     if (!success) {
-        outError = "Failed to spawn FFmpeg. Path: " + m_ffmpegPath;
+        outError = "启动 FFmpeg 失败，路径: " + m_ffmpegPath;
         CloseHandle(m_hStdInWrite);
         m_hStdInWrite = nullptr;
         if (m_hAudioPipe != INVALID_HANDLE_VALUE) {
@@ -455,7 +430,7 @@ bool RecordingEngine::StartRecording(
         return false;
     }
 
-    // Start native WASAPI loopback audio capture thread feeding the named pipe
+    // 启动原生 WASAPI 音频采集线程发送数据至命名管道
     if (m_recordSysAudio && m_hAudioPipe != INVALID_HANDLE_VALUE) {
         m_loopback.Start(m_hAudioPipe);
     }
@@ -466,11 +441,11 @@ bool RecordingEngine::StartRecording(
 
 bool RecordingEngine::StopRecording(std::string& outError) {
     if (!m_recording) {
-        outError = "Not recording.";
+        outError = "未在录制。";
         return false;
     }
 
-    // 1. Stop native audio loopback if active, sending EOF to FFmpeg
+    // 1. 停止 WASAPI 音频采集并关闭管道
     if (m_recordSysAudio) {
         m_loopback.Stop();
     }
@@ -479,7 +454,7 @@ bool RecordingEngine::StopRecording(std::string& outError) {
         m_hAudioPipe = INVALID_HANDLE_VALUE;
     }
 
-    // 2. Write 'q\n' to FFmpeg stdin to stop it gracefully
+    // 2. 向 FFmpeg 标准输入 (stdin) 发送 'q\n' 指令优雅结束 MP4 文件写入
     if (m_hStdInWrite) {
         DWORD bytesWritten = 0;
         WriteFile(m_hStdInWrite, "q\n", 2, &bytesWritten, NULL);
@@ -487,12 +462,11 @@ bool RecordingEngine::StopRecording(std::string& outError) {
         m_hStdInWrite = nullptr;
     }
 
-    // 3. Wait for FFmpeg process to finalize the file (up to 30 seconds for large files)
+    // 3. 等待 FFmpeg 进程退出并释放句柄 (最多等待 30 秒)
     DWORD waitResult = WaitForSingleObject(m_pi.hProcess, 30000);
     if (waitResult != WAIT_OBJECT_0) {
-        // If it doesn't close gracefully, terminate it
         TerminateProcess(m_pi.hProcess, 1);
-        outError = "FFmpeg did not exit gracefully within 30s, terminated.";
+        outError = "FFmpeg 未能在 30 秒内退出，已被强制终止。";
     }
 
     CloseHandle(m_pi.hProcess);

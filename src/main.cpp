@@ -15,24 +15,30 @@
 
 using namespace Microsoft::WRL;
 
-// Global variables
-HWND g_hWnd = NULL;
-HINSTANCE g_hInstance = NULL;
-ICoreWebView2Controller* g_webController = nullptr;
-ICoreWebView2* g_webView = nullptr;
-RecordingEngine g_recorder;
-RecordBorder g_border;
-bool g_isCompact = false;
-RECT g_normalRect = { 0, 0, 620, 580 };
-int g_cropX = 0, g_cropY = 0, g_cropW = 0, g_cropH = 0;
+// ==========================================
+// 全局变量定义
+// ==========================================
+HWND g_hWnd = NULL;                          // 主窗口句柄
+HINSTANCE g_hInstance = NULL;                // 应用程序实例句柄
+ICoreWebView2Controller* g_webController = nullptr; // WebView2 控制器接口
+ICoreWebView2* g_webView = nullptr;          // WebView2 核心接口
+RecordingEngine g_recorder;                  // FFmpeg 录制引擎单例
+RecordBorder g_border;                       // 交互式录制边框窗口单例
+bool g_isCompact = false;                    // 当前是否处于紧凑/悬浮条模式
+RECT g_normalRect = { 0, 0, 620, 580 };      // 保存普通模式下的窗口位置尺寸
+int g_cropX = 0, g_cropY = 0, g_cropW = 0, g_cropH = 0; // 当前选中的录像坐标与分辨率
 
+// 资源与显卡初始化完成自定义消息
 #define WM_USER_INIT_DONE (WM_USER + 100)
 static bool g_isInitComplete = false;
 static std::string g_initStatusJson = "";
 
+// 函数前向声明
 void SendWebMessage(const std::string& message);
 
-// Tray icon constants
+// ==========================================
+// 系统托盘图标管理与菜单
+// ==========================================
 #define WM_TRAYNOTIFY       (WM_USER + 1)
 #define IDM_TRAY_SHOW       2001
 #define IDM_TRAY_START_STOP 2002
@@ -41,6 +47,7 @@ void SendWebMessage(const std::string& message);
 NOTIFYICONDATA g_trayNid = {};
 bool g_trayAdded = false;
 
+/// 添加系统托盘图标
 static void AddTrayIcon(HWND hWnd, HINSTANCE hInst) {
     if (g_trayAdded) return;
     ZeroMemory(&g_trayNid, sizeof(g_trayNid));
@@ -55,12 +62,14 @@ static void AddTrayIcon(HWND hWnd, HINSTANCE hInst) {
     g_trayAdded = true;
 }
 
+/// 移除系统托盘图标
 static void RemoveTrayIcon() {
     if (!g_trayAdded) return;
     Shell_NotifyIconW(NIM_DELETE, &g_trayNid);
     g_trayAdded = false;
 }
 
+/// 弹出托盘右键菜单
 static void ShowTrayMenu(HWND hWnd) {
     HMENU hMenu = CreatePopupMenu();
     bool isRecording = g_recorder.IsRecording();
@@ -72,10 +81,9 @@ static void ShowTrayMenu(HWND hWnd) {
     AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
     AppendMenuW(hMenu, MF_STRING, IDM_TRAY_QUIT, L"退出");
 
-    // Position menu at cursor
     POINT pt;
     GetCursorPos(&pt);
-    SetForegroundWindow(hWnd); // Required for menu to dismiss properly
+    SetForegroundWindow(hWnd);
     UINT cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN,
                               pt.x, pt.y, 0, hWnd, NULL);
     DestroyMenu(hMenu);
@@ -84,7 +92,7 @@ static void ShowTrayMenu(HWND hWnd) {
         ShowWindow(hWnd, SW_RESTORE);
         SetForegroundWindow(hWnd);
     } else if (cmd == IDM_TRAY_START_STOP) {
-        // Forward start/stop to WebView JS
+        // 转发开始/停止指令给前端 JS
         if (g_webView) {
             if (isRecording) {
                 g_webView->ExecuteScript(L"window.__stopRecording && window.__stopRecording();", nullptr);
@@ -98,6 +106,7 @@ static void ShowTrayMenu(HWND hWnd) {
     }
 }
 
+/// 调试日志输出工具
 static void LogDebug(const std::string& text) {
     wchar_t myVideosPath[MAX_PATH];
     SHGetFolderPathW(NULL, CSIDL_MYVIDEO, NULL, 0, myVideosPath);
@@ -113,112 +122,9 @@ static void LogDebug(const std::string& text) {
     }
 }
 
-// Splash Window globals
-HWND g_hSplashWnd = NULL;
-int g_splashProgress = 0;
-std::wstring g_splashStatusText = L"正在启动...";
-
-LRESULT CALLBACK SplashWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    switch (message) {
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hWnd, &ps);
-        RECT rc;
-        GetClientRect(hWnd, &rc);
-
-        // Double buffering to prevent flicker
-        HDC hdcMem = CreateCompatibleDC(hdc);
-        HBITMAP hbmMem = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
-        HGDIOBJ hOldObj = SelectObject(hdcMem, hbmMem);
-
-        // Fill background (#0c0e12)
-        HBRUSH hBgBrush = CreateSolidBrush(RGB(12, 14, 18));
-        FillRect(hdcMem, &rc, hBgBrush);
-        DeleteObject(hBgBrush);
-
-        // Draw border (#1e232d)
-        HPEN hBorderPen = CreatePen(PS_SOLID, 1, RGB(30, 35, 45));
-        HGDIOBJ hOldPen = SelectObject(hdcMem, hBorderPen);
-        MoveToEx(hdcMem, 0, 0, NULL);
-        LineTo(hdcMem, rc.right - 1, 0);
-        LineTo(hdcMem, rc.right - 1, rc.bottom - 1);
-        LineTo(hdcMem, 0, rc.bottom - 1);
-        LineTo(hdcMem, 0, 0);
-        SelectObject(hdcMem, hOldPen);
-        DeleteObject(hBorderPen);
-
-        // Fonts
-        HFONT hTitleFont = CreateFontW(16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_OUTLINE_PRECIS,
-            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei");
-        HGDIOBJ hOldFont = SelectObject(hdcMem, hTitleFont);
-        SetTextColor(hdcMem, RGB(243, 244, 246));
-        SetBkMode(hdcMem, TRANSPARENT);
-        
-        RECT rcTitle = { 20, 20, rc.right - 100, 45 };
-        DrawTextW(hdcMem, L"智眸录屏", -1, &rcTitle, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-
-        // Status Text
-        HFONT hStatusFont = CreateFontW(12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_OUTLINE_PRECIS,
-            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei");
-        SelectObject(hdcMem, hStatusFont);
-        SetTextColor(hdcMem, RGB(156, 163, 175));
-        RECT rcStatus = { 20, 45, rc.right - 20, 70 };
-        DrawTextW(hdcMem, g_splashStatusText.c_str(), -1, &rcStatus, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-
-        // Progress bar track
-        RECT rcProgressTrack = { 20, 80, rc.right - 20, 92 };
-        HBRUSH hTrackBrush = CreateSolidBrush(RGB(22, 26, 36));
-        FillRect(hdcMem, &rcProgressTrack, hTrackBrush);
-        DeleteObject(hTrackBrush);
-
-        // Progress bar fill (Accent Cyan #00f0f0)
-        int fillWidth = (rcProgressTrack.right - rcProgressTrack.left) * g_splashProgress / 100;
-        if (fillWidth > 0) {
-            RECT rcProgressFill = { rcProgressTrack.left, rcProgressTrack.top, rcProgressTrack.left + fillWidth, rcProgressTrack.bottom };
-            HBRUSH hFillBrush = CreateSolidBrush(RGB(0, 240, 240));
-            FillRect(hdcMem, &rcProgressFill, hFillBrush);
-            DeleteObject(hFillBrush);
-        }
-
-        // Percentage text
-        wchar_t percentStr[32];
-        swprintf_s(percentStr, L"%d%%", g_splashProgress);
-        RECT rcPercent = { rc.right - 80, 20, rc.right - 20, 45 };
-        SelectObject(hdcMem, hTitleFont);
-        SetTextColor(hdcMem, RGB(0, 240, 240));
-        DrawTextW(hdcMem, percentStr, -1, &rcPercent, DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
-
-        SelectObject(hdcMem, hOldFont);
-        DeleteObject(hTitleFont);
-        DeleteObject(hStatusFont);
-
-        BitBlt(hdc, 0, 0, rc.right, rc.bottom, hdcMem, 0, 0, SRCCOPY);
-        SelectObject(hdcMem, hOldObj);
-        DeleteObject(hbmMem);
-        DeleteDC(hdcMem);
-
-        EndPaint(hWnd, &ps);
-        return 0;
-    }
-    default:
-        return DefWindowProc(hWnd, message, wParam, lParam);
-    }
-}
-
-void UpdateSplash(int progress, const std::wstring& statusText) {
-    g_splashProgress = progress;
-    g_splashStatusText = statusText;
-    if (g_hSplashWnd) {
-        InvalidateRect(g_hSplashWnd, NULL, FALSE);
-        UpdateWindow(g_hSplashWnd);
-        MSG msg;
-        while (PeekMessage(&msg, g_hSplashWnd, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
-}
-
+// ==========================================
+// 文件哈希校验与嵌入资源释放工具
+// ==========================================
 static std::string GetFileMD5(const std::wstring& filePath) {
     HANDLE hFile = CreateFileW(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return "";
@@ -282,6 +188,7 @@ static std::string GetBufferMD5(const BYTE* buffer, DWORD size) {
     return md5Result;
 }
 
+/// 释放 exe 内置静态资源至本地 AppData 目录
 static bool ExtractResource(int resourceId, const std::wstring& targetPath, bool forceOverwrite = false, bool isFfmpeg = false) {
     HRSRC hRes = FindResourceW(g_hInstance, MAKEINTRESOURCEW(resourceId), RT_RCDATA);
     if (!hRes) return false;
@@ -293,22 +200,17 @@ static bool ExtractResource(int resourceId, const std::wstring& targetPath, bool
     const BYTE* pData = (const BYTE*)LockResource(hData);
     if (!pData) return false;
 
+    // 若非强制覆盖，先进行文件大小与 MD5 哈希快速对比校验，相同则跳过写入
     if (!forceOverwrite) {
-        // Size-check first (fast path)
         HANDLE hCheck = CreateFileW(targetPath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (hCheck != INVALID_HANDLE_VALUE) {
             LARGE_INTEGER fileSize;
             if (GetFileSizeEx(hCheck, &fileSize) && fileSize.QuadPart == size) {
                 CloseHandle(hCheck);
-                
-                // If is Ffmpeg, report status and double-check MD5
-                if (isFfmpeg) {
-                    UpdateSplash(50, L"正在校验录屏引擎...");
-                }
                 std::string fileMd5 = GetFileMD5(targetPath);
                 std::string resMd5 = GetBufferMD5(pData, size);
                 if (fileMd5 == resMd5) {
-                    return true; // Match, skip extraction!
+                    return true;
                 }
             } else {
                 CloseHandle(hCheck);
@@ -316,11 +218,11 @@ static bool ExtractResource(int resourceId, const std::wstring& targetPath, bool
         }
     }
 
-    // Write file in chunk-by-chunk loops
+    // 分块写入大文件（如 ffmpeg.exe）
     HANDLE hFile = CreateFileW(targetPath.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return false;
 
-    const DWORD CHUNK_SIZE = 1024 * 1024 * 4; // 4MB chunks
+    const DWORD CHUNK_SIZE = 1024 * 1024 * 4; // 4MB 块
     DWORD bytesWrittenTotal = 0;
     
     while (bytesWrittenTotal < size) {
@@ -331,13 +233,6 @@ static bool ExtractResource(int resourceId, const std::wstring& targetPath, bool
             return false;
         }
         bytesWrittenTotal += bytesWritten;
-
-        if (isFfmpeg) {
-            int progress = (int)((ULONGLONG)bytesWrittenTotal * 100 / size);
-            wchar_t status[128];
-            swprintf_s(status, L"正在释放录屏引擎... (%d MB / %d MB)", bytesWrittenTotal / (1024 * 1024), size / (1024 * 1024));
-            UpdateSplash(progress, status);
-        }
     }
 
     CloseHandle(hFile);
@@ -357,32 +252,32 @@ static bool ExtractAllResources() {
     CreateDirectoryW((rootDir + L"\\ui").c_str(), NULL);
 
     bool ok = true;
-    ok &= ExtractResource(IDR_FFMPEG_EXE, rootDir + L"\\ffmpeg.exe", false, true); // Do not force overwrite FFmpeg (huge file), but enable progress and MD5 verification
-    ok &= ExtractResource(IDR_HTML, rootDir + L"\\ui\\index.html", true, false);    // Force overwrite UI files so updates take effect
+    ok &= ExtractResource(IDR_FFMPEG_EXE, rootDir + L"\\ffmpeg.exe", false, true);
+    ok &= ExtractResource(IDR_HTML, rootDir + L"\\ui\\index.html", true, false);
     ok &= ExtractResource(IDR_CSS, rootDir + L"\\ui\\style.css", true, false);
     ok &= ExtractResource(IDR_JS, rootDir + L"\\ui\\main.js", true, false);
     return ok;
 }
 
-// Mode Switching Functions
+// ==========================================
+// 界面模式切换 (普通完整模式 <-> 录制紧凑悬浮条)
+// ==========================================
 void SwitchToCompactMode(int x, int y, int w, int h) {
     if (g_isCompact) return;
 
-    // Save current window position
+    // 记录当前普通模式的窗口几何参数
     GetWindowRect(g_hWnd, &g_normalRect);
-
     g_isCompact = true;
 
     UINT dpi = GetDpiForWindow(g_hWnd);
     if (dpi == 0) dpi = 96;
 
-    // Compact dimensions: 380w x 80h (DPI scaled)
+    // 紧凑悬浮控制条尺寸：380w x 80h（结合 DPI 缩放）
     int tbW = MulDiv(380, dpi, 96);
     int tbH = MulDiv(80, dpi, 96);
     int tbX = x + (w - tbW) / 2;
     int tbY = y + h + 12;
 
-    // Use virtual screen metrics to correctly handle multi-monitor setups
     int vsLeft  = GetSystemMetrics(SM_XVIRTUALSCREEN);
     int vsTop   = GetSystemMetrics(SM_YVIRTUALSCREEN);
     int vsRight = vsLeft + GetSystemMetrics(SM_CXVIRTUALSCREEN);
@@ -391,14 +286,14 @@ void SwitchToCompactMode(int x, int y, int w, int h) {
     if (tbX < vsLeft) tbX = vsLeft;
     if (tbX + tbW > vsRight) tbX = vsRight - tbW;
     if (tbY + tbH > vsBot) {
-        tbY = y - tbH - 12; // Try placing above selected region
+        tbY = y - tbH - 12;
         if (tbY < vsTop) tbY = y + 10;
     }
 
-    // Place window and make it topmost
+    // 设置主窗口置顶并改变尺寸为悬浮条
     SetWindowPos(g_hWnd, HWND_TOPMOST, tbX, tbY, tbW, tbH, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
-    // Create selection border outline window
+    // 弹出捕获区域全穿透边框窗口
     g_border.Create(g_hInstance, x, y, w, h);
     g_border.SetOnAreaChanged([](int newX, int newY, int newW, int newH) {
         g_cropX = newX;
@@ -416,17 +311,14 @@ void SwitchToCompactMode(int x, int y, int w, int h) {
 void SwitchToNormalMode() {
     if (!g_isCompact) return;
 
-    // Destroy outline border
+    // 销毁录制边框
     g_border.Destroy();
-
     g_isCompact = false;
 
-    // Restore to saved position, clear TOPMOST
-    // Use a safe initial height; JS ResizeObserver will re-measure and correct it
+    // 还原窗口为普通布局与非置顶状态
     int savedW = g_normalRect.right  - g_normalRect.left;
     int savedH = g_normalRect.bottom - g_normalRect.top;
 
-    // Clamp saved position back onto any currently connected monitor
     int vsLeft  = GetSystemMetrics(SM_XVIRTUALSCREEN);
     int vsTop   = GetSystemMetrics(SM_YVIRTUALSCREEN);
     int vsRight = vsLeft + GetSystemMetrics(SM_CXVIRTUALSCREEN);
@@ -441,7 +333,7 @@ void SwitchToNormalMode() {
 
     SetWindowPos(g_hWnd, HWND_NOTOPMOST, restoreX, restoreY, savedW, savedH, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
-    // Ask JS to re-measure and send correct height back
+    // 通知前端 JS 重新计算 DOM 容器高度并请求调整
     if (g_webView) {
         g_webView->ExecuteScript(
             L"(function(){"
@@ -455,7 +347,9 @@ void SwitchToNormalMode() {
     }
 }
 
-// Helper function definitions
+// ==========================================
+// 字符串编码转换与显示器枚举工具
+// ==========================================
 static std::string WStringToString(const std::wstring& wstr) {
     if (wstr.empty()) return "";
     int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
@@ -474,10 +368,7 @@ static std::wstring StringToWString(const std::string& str) {
 
 struct MonitorDevice {
     std::string name;
-    int x;
-    int y;
-    int w;
-    int h;
+    int x, y, w, h;
 };
 
 static BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
@@ -516,7 +407,9 @@ static std::string EscapeJsonString(const std::string& s) {
     return out;
 }
 
-// JSON parsing helpers
+// ==========================================
+// 简单轻量级 JSON 字段提取辅助函数
+// ==========================================
 static std::string GetJsonStringValue(const std::string& json, const std::string& key) {
     size_t pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return "";
@@ -554,7 +447,7 @@ static int GetJsonIntValue(const std::string& json, const std::string& key) {
     return std::stoi(json.substr(pos));
 }
 
-// Get the user's default Videos path
+/// 获取当前系统的“视频”默认保存路径
 std::string GetVideosPath() {
     wchar_t* pPath = NULL;
     HRESULT hr = SHGetKnownFolderPath(FOLDERID_Videos, KF_FLAG_DEFAULT, NULL, &pPath);
@@ -566,7 +459,7 @@ std::string GetVideosPath() {
     return "C:\\";
 }
 
-// Send message to WebView2
+/// 发送消息至前端 WebView2 页面
 void SendWebMessage(const std::string& message) {
     if (g_webView) {
         std::wstring wMsg = StringToWString(message);
@@ -574,7 +467,9 @@ void SendWebMessage(const std::string& message) {
     }
 }
 
-// Handle WebView2 IPC messages
+// ==========================================
+// 核心 IPC 消息分发处理器（处理 WebView2 JS 指令）
+// ==========================================
 void HandleWebMessage(const std::string& message) {
     std::string action = GetJsonStringValue(message, "action");
 
@@ -584,7 +479,7 @@ void HandleWebMessage(const std::string& message) {
         }
     }
     else if (action == "init") {
-        // Enumerate microphones
+        // 枚举麦克风与显示器设备
         auto mics = g_recorder.GetMicrophoneDevices();
         auto monitors = GetMonitorDevices();
         std::string encoder = g_recorder.GetBestEncoderFriendlyName();
@@ -611,13 +506,11 @@ void HandleWebMessage(const std::string& message) {
         SendWebMessage(ss.str());
     }
     else if (action == "select_area") {
-        // Hide main window during selection
+        // 点击“框选区域”：先最小化主窗口，弹出全屏画框蒙版
         ShowWindow(g_hWnd, SW_MINIMIZE);
         
-        // Block and show select overlay
         CropRect rect = SelectionOverlay::Show(g_hInstance);
         
-        // Restore main window
         ShowWindow(g_hWnd, SW_RESTORE);
         SetForegroundWindow(g_hWnd);
 
@@ -625,7 +518,6 @@ void HandleWebMessage(const std::string& message) {
         if (rect.cancelled) {
             ss << "{\"action\":\"select_area_response\",\"cancelled\":true}";
         } else {
-            // Save coordinates
             g_cropX = rect.x;
             g_cropY = rect.y;
             g_cropW = rect.w;
@@ -635,7 +527,7 @@ void HandleWebMessage(const std::string& message) {
                << ",\"x\":" << rect.x << ",\"y\":" << rect.y 
                << ",\"w\":" << rect.w << ",\"h\":" << rect.h << "}";
             
-            // Switch to compact mode and display outline border wnd
+            // 切换为紧凑悬浮控制条，并弹出交互式录制边框
             SwitchToCompactMode(rect.x, rect.y, rect.w, rect.h);
         }
         SendWebMessage(ss.str());
@@ -663,8 +555,7 @@ void HandleWebMessage(const std::string& message) {
 
         std::ostringstream ss;
         if (success) {
-            // Set border window color to red (recording)
-            g_border.SetRecording(true);
+            g_border.SetRecording(true); // 边框变为亮红色
 
             ss << "{\"action\":\"start_recording_response\",\"success\":true,\"filename\":\"" 
                << EscapeJsonString(filename) << "\"}";
@@ -680,9 +571,8 @@ void HandleWebMessage(const std::string& message) {
 
         std::ostringstream ss;
         if (success) {
-            // Revert border recording color, and return window to normal layout
             g_border.SetRecording(false);
-            SwitchToNormalMode();
+            SwitchToNormalMode(); // 恢复为正常主界面
 
             ss << "{\"action\":\"stop_recording_response\",\"success\":true}";
         } else {
@@ -692,6 +582,7 @@ void HandleWebMessage(const std::string& message) {
         SendWebMessage(ss.str());
     }
     else if (action == "start_drag") {
+        // 无边框自定义标题栏拖拽实现
         ReleaseCapture();
         SendMessage(g_hWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
     }
@@ -699,7 +590,7 @@ void HandleWebMessage(const std::string& message) {
         SwitchToNormalMode();
     }
     else if (action == "minimize") {
-        // Hide to system tray instead of minimizing to taskbar
+        // 隐藏至系统右下角托盘
         ShowWindow(g_hWnd, SW_HIDE);
         AddTrayIcon(g_hWnd, g_hInstance);
     }
@@ -718,21 +609,12 @@ void HandleWebMessage(const std::string& message) {
     }
     else if (action == "resize_window") {
         int h = GetJsonIntValue(message, "h");
-        std::ostringstream ss;
-        ss << "C++: Received resize_window, h=" << h << ", g_isCompact=" << g_isCompact;
-        LogDebug(ss.str());
-
         if (!g_isCompact && h > 0) {
             UINT dpi = GetDpiForWindow(g_hWnd);
             if (dpi == 0) dpi = 96;
 
             int physicalWidth = MulDiv(620, dpi, 96);
             int physicalHeight = MulDiv(h, dpi, 96) + 4;
-
-            std::ostringstream ss2;
-            ss2 << "C++: SetWindowPos called, physicalWidth=" << physicalWidth 
-                << ", physicalHeight=" << physicalHeight << " (DPI=" << dpi << ")";
-            LogDebug(ss2.str());
 
             SetWindowPos(g_hWnd, NULL, 0, 0, physicalWidth, physicalHeight, 
                          SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
@@ -744,30 +626,21 @@ void HandleWebMessage(const std::string& message) {
     }
 }
 
-// Window Procedure
+// ==========================================
+// Win32 主窗口过程 (WndProc)
+// ==========================================
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_NCCALCSIZE: {
         if (wParam == TRUE) {
-            // Returning 0 removes the default non-client frame (titlebar and borders),
-            // while preserving the WS_THICKFRAME resize boundaries.
+            // 返回 0 去除默认 Win32 标题栏与非客户区外框，实现无边框现代 UI
             return 0;
         }
         break;
     }
     case WM_DPICHANGED: {
+        // 多显示器 DPI 动态切换缩放自适应
         RECT* const prcNewWindow = (RECT*)lParam;
-        UINT dpi = GetDpiForWindow(hWnd);
-        std::ostringstream ss;
-        ss << "C++: WM_DPICHANGED, recommended physical rect: L=" << prcNewWindow->left 
-           << ", T=" << prcNewWindow->top 
-           << ", R=" << prcNewWindow->right 
-           << ", B=" << prcNewWindow->bottom 
-           << " (w=" << (prcNewWindow->right - prcNewWindow->left) 
-           << ", h=" << (prcNewWindow->bottom - prcNewWindow->top) 
-           << "), new DPI=" << dpi;
-        LogDebug(ss.str());
-
         SetWindowPos(hWnd,
             NULL,
             prcNewWindow->left,
@@ -790,19 +663,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             pInfo->ptMaxTrackSize.x = tbW;
             pInfo->ptMaxTrackSize.y = tbH;
         } else {
-            // Set minimum window size in normal mode
             pInfo->ptMinTrackSize.x = MulDiv(500, dpi, 96);
             pInfo->ptMinTrackSize.y = MulDiv(400, dpi, 96);
         }
         return 0;
     }
     case WM_SIZE: {
-        int width = LOWORD(lParam);
-        int height = HIWORD(lParam);
-        std::ostringstream ss;
-        ss << "C++: WM_SIZE triggered, clientWidth=" << width << ", clientHeight=" << height;
-        LogDebug(ss.str());
-
         if (g_webController != nullptr) {
             RECT bounds;
             GetClientRect(hWnd, &bounds);
@@ -811,7 +677,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         break;
     }
     case WM_SYSCOMMAND: {
-        // Intercept minimize: hide to tray instead
         if ((wParam & 0xFFF0) == SC_MINIMIZE) {
             ShowWindow(hWnd, SW_HIDE);
             AddTrayIcon(hWnd, g_hInstance);
@@ -857,40 +722,42 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     return 0;
 }
 
+// ==========================================
+// Win32 程序入口点 (wWinMain)
+// ==========================================
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
                      _In_ LPWSTR    lpCmdLine,
                      _In_ int       nCmdShow) {
-    // Enable Per-Monitor DPI Awareness (V2) to ensure coordinates align across monitors with different scaling
+    // 启用 Per-Monitor DPI Awareness (V2) 高分屏自适应
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     g_hInstance = hInstance;
 
-    // Clear old debug logs
+    // 清理旧日志
     wchar_t myVideosPath[MAX_PATH];
     SHGetFolderPathW(NULL, CSIDL_MYVIDEO, NULL, 0, myVideosPath);
     std::wstring logPath = std::wstring(myVideosPath) + L"\\resize_debug_log.txt";
     DeleteFileW(logPath.c_str());
 
-    LogDebug("=== ScreenRecorder Debug Session Started ===");
+    LogDebug("=== ScreenRecorder Session Started ===");
 
-    // Initialize COM for UI thread
+    // 初始化 UI 线程的 COM 组件
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
     if (FAILED(hr)) return 1;
 
-    // Register Window Class
+    // 注册主窗口类
     WNDCLASSEXW wcex = { sizeof(WNDCLASSEX) };
     wcex.style          = CS_HREDRAW | CS_VREDRAW;
     wcex.lpfnWndProc    = WndProc;
     wcex.hInstance      = hInstance;
     wcex.hCursor        = LoadCursor(NULL, IDC_ARROW);
-    wcex.hbrBackground  = CreateSolidBrush(RGB(12, 14, 18)); // Prevent white flash at startup
+    wcex.hbrBackground  = CreateSolidBrush(RGB(12, 14, 18)); // 暗色底色防止闪白
     wcex.lpszClassName  = L"ScreenRecorderMainClass";
     wcex.hIcon          = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
     wcex.hIconSm        = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
     RegisterClassExW(&wcex);
 
-    // Get DPI of primary monitor to scale initial window dimensions
     UINT dpi = GetDpiForSystem();
     if (dpi == 0) dpi = 96;
 
@@ -901,7 +768,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     int posX = (screenWidth - winWidth) / 2;
     int posY = (screenHeight - winHeight) / 2;
 
-    // Create and Show Window IMMEDIATELY for sub-50ms instant UI startup!
+    // 1. 立即创建并展示主窗口（极速秒开感）
     g_hWnd = CreateWindowW(
         L"ScreenRecorderMainClass", L"智眸录屏 - 资源加载中...", 
         WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX,
@@ -917,7 +784,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     ShowWindow(g_hWnd, nCmdShow);
     UpdateWindow(g_hWnd);
 
-    // Launch background thread to extract resources and probe GPU encoders asynchronously
+    // 2. 创建后台工作线程异步执行资源释放与 GPU 编码器探测
     CreateThread(NULL, 0, [](LPVOID) -> DWORD {
         ExtractAllResources();
         g_recorder.Init();
@@ -925,8 +792,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         return 0;
     }, NULL, 0, NULL);
 
-    // Initialize WebView2
-    // User data folder goes into AppData\ScreenRecorder\webview_cache
+    // 3. 初始化 WebView2 渲染环境
     std::wstring userDataFolder = GetAppDataRootDir() + L"\\webview_cache";
 
     CreateCoreWebView2EnvironmentWithOptions(
@@ -949,25 +815,23 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                             g_webController = controller;
                             g_webController->AddRef();
 
-                            // Resize WebView to fit window
                             RECT bounds;
                             GetClientRect(g_hWnd, &bounds);
                             g_webController->put_Bounds(bounds);
 
-                            // Get WebView interface
                             g_webController->get_CoreWebView2(&g_webView);
                             g_webView->AddRef();
 
-                            // Settings customization
+                            // 禁用内置 F12 右键菜单与缩放，保持极客 UI
                             ICoreWebView2Settings* settings = nullptr;
                             g_webView->get_Settings(&settings);
                             if (settings != nullptr) {
-                                settings->put_AreDevToolsEnabled(FALSE); // Disable F12 devtools for clean production UI
-                                settings->put_AreDefaultContextMenusEnabled(FALSE); // Disable right click menus
-                                settings->put_IsZoomControlEnabled(FALSE); // Disable pinch/ctrl zoom
+                                settings->put_AreDevToolsEnabled(FALSE);
+                                settings->put_AreDefaultContextMenusEnabled(FALSE);
+                                settings->put_IsZoomControlEnabled(FALSE);
                             }
 
-                            // Register Message Received Callback
+                            // 注册前端 postMessage 消息接收回调
                             g_webView->add_WebMessageReceived(
                                 Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                                     [](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
@@ -983,10 +847,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                                 ).Get(), nullptr
                             );
 
-                            // Navigate to extracted index.html in AppData
+                            // 加载前端 index.html
                             std::wstring rootDir = GetAppDataRootDir();
                             std::wstring htmlPath = L"file:///" + rootDir + L"/ui/index.html";
-                            // Replace backslashes with forward slashes for correct URL
                             for (size_t i = 0; i < htmlPath.length(); ++i) {
                                 if (htmlPath[i] == L'\\') {
                                     htmlPath[i] = L'/';
@@ -1003,14 +866,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         ).Get()
     );
 
-    // Main message loop
+    // 主 Win32 消息循环
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
-    // Cleanup WebView2 resources
+    // 释放 COM 与 WebView2 资源
     if (g_webView) g_webView->Release();
     if (g_webController) g_webController->Release();
 
