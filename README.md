@@ -1,14 +1,13 @@
 # 智眸录屏 (ScreenRecorder)
 
 <p align="center">
-  <b>一款基于 C++17、WebView2 与 FFmpeg 的超轻量、秒开启动、GPU 硬件加速屏幕录制软件</b>
+  <b>一款基于 C++17、WebView2 与 FFmpeg 的超轻量 GPU 硬件加速屏幕录制软件</b>
 </p>
 
 ---
 
 ## 🌟 核心特性亮点
 
-- ⚡ **秒开启动 (Sub-50ms)**：主窗口采用异步加载架构，启动时间控制在 50 毫秒以内，界面秒开无卡顿，并在标题栏与徽章实时动态提示资源与 GPU 加速检测状态。
 - 🚀 **GPU 硬件加速**：自动探测显卡类型（NVIDIA NVENC / Intel QuickSync / AMD AMF / Media Foundation），支持 1080P/4K 高帧率流畅录制，极低 CPU 与内存占用。
 - 🎯 **全穿透交互式录屏框**：
   - **8 节点缩放**：支持拖拽四角与四边控制手柄自由调整录像分辨率。
